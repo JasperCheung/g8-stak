@@ -1,0 +1,104 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+#include "ml6.h"
+#include "display.h"
+#include "draw.h"
+#include "matrix.h"
+#include "parser.h"
+
+void parse_file ( char * filename ) {
+
+  FILE *f = strcmp(filename, "stdin") ? fopen(filename, "r") : stdin;
+  screen s;
+  clear_screen(s);
+  color c;
+  c.red = c.green = c.blue = 0;
+  char line[256], axis;
+  double x[4], y[4], z[4], theta, r, r1;
+  int step = 100, step_3d = 10;
+  struct stack * cstack = new_stack();
+  struct matrix *tmp;
+
+  while ( fgets(line, 255, f) ) {
+    line[strlen(line)-1]='\0';
+    if ( !strcmp(line, "line") || !strcmp(line, "bezier") || !strcmp(line, "hermite") || !strcmp(line, "circle") || !strcmp(line, "box") || !strcmp(line, "sphere") || !strcmp(line, "torus")) {
+      tmp = new_matrix(4, 4);
+      if ( !strcmp(line, "box") || !strcmp(line, "sphere") || !strcmp(line, "torus") ) {
+        if ( !strcmp(line, "box") ) {
+          fgets(line, sizeof(line), f);
+          sscanf(line, "%lf %lf %lf %lf %lf %lf", x, y, z, x+1, y+1, z+1);
+          add_box(tmp, x[0], y[0], z[0], x[1], y[1], z[1]);
+        } else if ( !strcmp(line, "sphere") ) {
+          fgets(line, sizeof(line), f);
+          sscanf(line, "%lf %lf %lf %lf", x, y, z, &r);
+          add_sphere(tmp, x[0], y[0], z[0], r, step_3d);
+        } else {
+          fgets(line, sizeof(line), f);
+          sscanf(line, "%lf %lf %lf %lf %lf", x, y, z, &r, &r1);
+          add_torus(tmp, x[0], y[0], z[0], r, r1, step_3d);
+        }
+        matrix_mult(peek(cstack), tmp);
+        draw_polygons(tmp, s, c);
+      }
+      else {
+        if ( !strcmp(line, "line") ) {
+          fgets(line, sizeof(line), f);
+          sscanf(line, "%lf %lf %lf %lf %lf %lf", x, y, z, x+1, y+1, z+1);
+          add_edge(tmp, x[0], y[0], z[0], x[1], y[1], z[1]);
+        } else if ( !strcmp(line, "hermite") ) {
+          fgets(line, sizeof(line), f);
+          sscanf(line, "%lf %lf %lf %lf %lf %lf %lf %lf", x, y, x+1, y+1, x+2, y+2, x+3, y+3);
+          add_curve( tmp, x[0], y[0], x[1], y[1], x[2], y[2], x[3], y[3], step, HERMITE);
+        } else if ( !strcmp(line, "bezier") ) {
+          fgets(line, sizeof(line), f);
+          sscanf(line, "%lf %lf %lf %lf %lf %lf %lf %lf", x, y, x+1, y+1, x+2, y+2, x+3, y+3);
+          add_curve( tmp, x[0], y[0], x[1], y[1], x[2], y[2], x[3], y[3], step, BEZIER);
+        } else {
+          fgets(line, sizeof(line), f);
+          sscanf(line, "%lf %lf %lf %lf", x, y, z, &r);
+          add_circle( tmp, x[0], y[0], z[0], r, step);
+        }
+        matrix_mult(peek(cstack), tmp);
+        draw_lines(tmp, s, c);
+      }
+      free_matrix(tmp);
+    } else if ( !strcmp(line, "move") || !strcmp(line, "rotate") || !strcmp(line, "scale") ) {
+      if ( !strcmp(line, "move") ) {
+        fgets(line, sizeof(line), f);
+        sscanf(line, "%lf %lf %lf", x, y, z);
+        tmp = make_translate( x[0], y[0], z[0]);
+      } else if ( !strcmp(line, "rotate") ) {
+        fgets(line, sizeof(line), f);
+        sscanf(line, "%c %lf", &axis, &theta);
+        theta = theta * (M_PI / 180);
+        if ( axis == 'x' ) tmp = make_rotX( theta );
+        else if ( axis == 'y' ) tmp = make_rotY( theta );
+        else tmp = make_rotZ( theta );
+      } else {
+        fgets(line, sizeof(line), f);
+        sscanf(line, "%lf %lf %lf", x, y, z);
+        tmp = make_scale( x[0], y[0], z[0]);
+      }
+      matrix_mult(peek(cstack), tmp);
+      copy_matrix(tmp, peek(cstack));
+      free_matrix(tmp);
+    } else if ( !strcmp(line, "push") ) {
+      push(cstack);
+    } else if ( !strcmp(line, "pop") ) {
+      pop(cstack);
+    } else if ( !strcmp(line, "display") ) {
+      display( s );
+    } else if ( !strcmp(line, "save") ) {
+      fgets(line, 255, f);
+      save_extension(s, line);
+    } else if ( !strcmp(line, "clear") ) {
+      clear_screen(s);
+      free_stack(cstack);
+      cstack = new_stack();
+    }
+  }
+  free_stack(cstack);
+  fclose(f);
+}
